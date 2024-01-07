@@ -5,6 +5,8 @@ const { promisify } = require('util');
 const crypto = require('crypto');
 const directoryTree = require('directory-tree');
 const fs = require('fs');
+const path = require('path');
+
 
 const root_repos = 'root';
 const PORT = process.env.PORT || 80;
@@ -50,28 +52,54 @@ function isBinaryFile(filePath) {
     }
 }
 
+function truncateContent(obj, maxLength) {
+    if (obj.content) {
+        // Check if content length exceeds maxLength
+        if (obj.content.length > maxLength) {
+            // Truncate content
+            obj.content = obj.content.substring(0, maxLength);
+            obj.content += '...';
+        }
+    }
+
+    // Recursively process children
+    if (obj.children && obj.children.length > 0) {
+        obj.children.forEach(child => {
+            truncateContent(child, maxLength);
+        });
+    }
+}
+
 function generateFileContentJSON(files) {
     const fileContentArray = [];
+    const fileContentArray_names = [];
+    let count = 0;
 
     function processFile(file) {
         if (file.children) {
             const folderContent = [];
+            const folderContent_name = [];
             file.children.forEach(child => {
                 if (child.children) {
-                    processFile(child); // Recursive call for nested folders
+                    processFile(child);
                 } else {
                     if (isBinaryFile(child.path)) {
-                        // For binary files, set the content as 'binary'
                         folderContent.push({
                             name: child.name,
                             content: 'binary',
                         });
+                        folderContent_name.push({
+                            name: child.name
+                        });
                     } else {
-                        // For non-binary files, read the content and add it to the array
+                        count++;
                         const content = fs.readFileSync(child.path, 'utf-8');
                         folderContent.push({
                             name: child.name,
                             content: content,
+                        });
+                        folderContent_name.push({
+                            name: child.name
                         });
                     }
                 }
@@ -81,48 +109,75 @@ function generateFileContentJSON(files) {
                     name: file.name,
                     children: folderContent,
                 });
+                fileContentArray_names.push({
+                    name: file.name,
+                    children: folderContent,
+                });
             }
         } else {
             if (isBinaryFile(file.path)) {
-                // For binary files, set the content as 'binary'
                 fileContentArray.push({
                     name: file.name,
                     content: 'binary',
                 });
+                fileContentArray_names.push({
+                    name: file.name,
+                });
             } else {
-                // For non-binary files, read the content and add it to the array
+                count++;
                 const content = fs.readFileSync(file.path, 'utf-8');
                 fileContentArray.push({
                     name: file.name,
                     content: content,
                 });
+                fileContentArray_names.push({
+                    name: file.name,
+                });
             }
         }
     }
-
     files.forEach(file => {
         processFile(file);
     });
-
-    return fileContentArray;
+    fileContentArray.forEach(element => {
+        truncateContent(element, (20000 / count));
+    });
+    let double_data = {
+        'fileNames': fileContentArray_names,
+        'fileContentArray': fileContentArray,
+    }
+    return double_data;
 }
 
 app.post('/clone', async (req, res) => {
     const _repoUrl = req.body.repoUrl;
     if (_repoUrl === undefined)
         return res.status(500).json({ error: 'Non valid repo url' });
-    const localPath = `${root_repos}/${generateRepoNameWithHash(_repoUrl)}`;
+
+    const localPath = path.join(root_repos, generateRepoNameWithHash(_repoUrl));
     const git = simpleGit();
+
     try {
         git.clone(_repoUrl, localPath, (err, result) => {
             if (err) {
                 console.error('Error cloning repository:', err);
-                return;
+                return res.status(500).json({ error: 'Failed to clone repository' });
             }
-            let tree_document_childs = get_doc_child(localPath);
-            const fileContentJSON = generateFileContentJSON(tree_document_childs);
-            console.log("200 Success!")
-            return res.status(200).json(fileContentJSON);
+
+            try {
+                let tree_document_childs = get_doc_child(localPath);
+                const fileContentJSON = generateFileContentJSON(tree_document_childs);
+                console.log("200 Success!")
+                res.status(200).json(fileContentJSON);
+            } finally {
+                // Delete the cloned folder after finishing with it
+                try {
+                    fs.rmdirSync(localPath, { recursive: true });
+                    console.log('Cloned repository deleted successfully.');
+                } catch (deleteError) {
+                    console.error('Error deleting cloned repository:', deleteError);
+                }
+            }
         });
     } catch (error) {
         return res.status(500).json({ error: 'Failed to clone repository' });
