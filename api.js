@@ -9,7 +9,7 @@ const path = require('path');
 
 
 const root_repos = 'root';
-const PORT = process.env.PORT || 80;
+const PORT = 80;
 
 const app = express();
 app.use(express.json());
