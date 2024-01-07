@@ -7,9 +7,8 @@ const directoryTree = require('directory-tree');
 const fs = require('fs');
 const path = require('path');
 
-
 const root_repos = 'root';
-const PORT = 8080;
+const PORT = process.env.PORT || 80;
 
 const app = express();
 app.use(express.json());
