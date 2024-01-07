@@ -1,4 +1,11 @@
 {
+  "name": "your-project-name",
+  "version": "1.0.0",
+  "description": "Your project description",
+  "main": "api.js",
+  "scripts": {
+    "start": "node api.js"
+  },
   "dependencies": {
     "crypto": "^1.0.1",
     "directory-tree": "^3.5.1",
